@@ -12,3 +12,9 @@ export interface OrnamentData {
   scale: [number, number, number]; // Changed to array for non-uniform scaling
   color: string;
 }
+
+export interface PhotoData {
+  id: string;
+  url: string;
+  aspect: number; // width / height
+}

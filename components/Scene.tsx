@@ -7,13 +7,15 @@ import { FoliageParticles } from './FoliageParticles';
 import { Ornaments } from './Ornaments';
 import { TopStar } from './TopStar';
 import { Gifts } from './Gifts';
-import { TreeState } from '../types';
+import { PhotoAlbum } from './PhotoAlbum';
+import { TreeState, PhotoData } from '../types';
 
 interface SceneProps {
   currentState: TreeState;
+  photos: PhotoData[];
 }
 
-export const Scene: React.FC<SceneProps> = ({ currentState }) => {
+export const Scene: React.FC<SceneProps> = ({ currentState, photos }) => {
   // We use a ref to track the animated progress value (0 to 1)
   // This allows us to pass a smooth float to the shaders/instances without triggering React re-renders every frame
   const progressRef = useRef(0);
@@ -53,6 +55,7 @@ export const Scene: React.FC<SceneProps> = ({ currentState }) => {
         <FoliageParticles progressRef={progressRef} />
         <Ornaments progressRef={progressRef} />
         <Gifts progressRef={progressRef} />
+        <PhotoAlbum photos={photos} progressRef={progressRef} />
       </group>
 
       {/* Ground Reflections */}

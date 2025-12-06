@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { TreeState } from '../types';
 
 interface UIProps {
   currentState: TreeState;
   onToggle: () => void;
+  onUpload: (files: FileList) => void;
 }
 
-export const UI: React.FC<UIProps> = ({ currentState, onToggle }) => {
+export const UI: React.FC<UIProps> = ({ currentState, onToggle, onUpload }) => {
   const isTree = currentState === TreeState.TREE_SHAPE;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onUpload(e.target.files);
+    }
+  };
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10 flex flex-col items-center justify-between p-12 text-center">
@@ -37,6 +45,24 @@ export const UI: React.FC<UIProps> = ({ currentState, onToggle }) => {
           </span>
           <div className={`absolute inset-0 bg-[#FFD700]/5 transition-transform duration-700 origin-center scale-0 group-hover:scale-100`} />
         </button>
+
+        {/* Upload Button */}
+        <div className="relative group">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            accept="image/*" 
+            multiple 
+            className="hidden" 
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="text-[#F5E6BF]/60 text-xs tracking-widest uppercase hover:text-[#FFD700] transition-colors duration-300 mt-4 border-b border-transparent hover:border-[#FFD700]"
+          >
+            + Add Memory
+          </button>
+        </div>
       </div>
 
     </div>
