@@ -40,6 +40,10 @@ const App: React.FC = () => {
     });
   };
 
+  const handleRemovePhoto = (id: string) => {
+    setPhotos(prev => prev.filter(p => p.id !== id));
+  };
+
   return (
     <div className="relative w-full h-screen bg-[#001008] overflow-hidden">
       
@@ -54,7 +58,11 @@ const App: React.FC = () => {
           toneMappingExposure: 1.2
         }}
       >
-        <Scene currentState={treeState} photos={photos} />
+        <Scene 
+          currentState={treeState} 
+          photos={photos} 
+          onRemovePhoto={handleRemovePhoto}
+        />
       </Canvas>
 
       {/* 2D Overlay */}

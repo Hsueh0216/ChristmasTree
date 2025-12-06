@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Image } from '@react-three/drei';
 import * as THREE from 'three';
@@ -9,6 +9,9 @@ import { PhotoData } from '../types';
 interface PhotoAlbumProps {
   photos: PhotoData[];
   progressRef: React.MutableRefObject<number>;
+  activeId: string | null;
+  setActiveId: (id: string | null) => void;
+  onRemovePhoto: (id: string) => void;
 }
 
 interface PhotoFrameProps {
@@ -18,6 +21,7 @@ interface PhotoFrameProps {
   isActive: boolean;
   setActive: (id: string | null) => void;
   progressRef: React.MutableRefObject<number>;
+  onRemovePhoto: (id: string) => void;
 }
 
 const GoldenDust = ({ visible }: { visible: boolean }) => {
@@ -27,7 +31,6 @@ const GoldenDust = ({ visible }: { visible: boolean }) => {
   const positions = useMemo(() => {
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      // Create a cloud around the camera center
       pos[i * 3] = (Math.random() - 0.5) * 15;
       pos[i * 3 + 1] = (Math.random() - 0.5) * 10;
       pos[i * 3 + 2] = (Math.random() - 0.5) * 5; 
@@ -40,7 +43,6 @@ const GoldenDust = ({ visible }: { visible: boolean }) => {
     const opacity = visible ? 1 : 0;
     easing.damp(pointsRef.current.material as THREE.PointsMaterial, 'opacity', opacity, 1.0, delta);
     
-    // Slow drift
     const positions = pointsRef.current.geometry.attributes.position.array as Float32Array;
     for(let i=0; i<count; i++) {
         positions[i*3 + 1] += Math.sin(state.clock.elapsedTime + i) * 0.01;
@@ -76,24 +78,22 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   total, 
   isActive, 
   setActive, 
-  progressRef 
+  progressRef,
+  onRemovePhoto
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const { camera, viewport } = useThree();
-  const vec = new THREE.Vector3();
+  const { camera } = useThree();
   const dir = new THREE.Vector3();
 
   // Initial Orbit Calculation
   const { radius, yBase, speedOffset, phaseOffset } = useMemo(() => {
     const yRange = CONFIG.TREE_HEIGHT * 0.6;
-    // Distribute evenly along height, but randomly around circle
     const yBase = -CONFIG.TREE_HEIGHT / 3 + (index / Math.max(total - 1, 1)) * yRange;
-    // Cone shape radius at this height
     const h = CONFIG.TREE_HEIGHT;
     const rAtY = (CONFIG.TREE_RADIUS * 1.2 * (h - (yBase + h/2))) / h; 
     
     return {
-      radius: rAtY + 1.0, // Float slightly outside leaves
+      radius: rAtY + 1.0,
       yBase,
       speedOffset: 0.2 + Math.random() * 0.2,
       phaseOffset: Math.random() * Math.PI * 2
@@ -103,10 +103,9 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   useFrame((state, delta) => {
     if (!groupRef.current) return;
     const time = state.clock.getElapsedTime();
-    const progress = progressRef.current; // 0=Scattered, 1=Tree
+    const progress = progressRef.current;
 
     // --- 1. Calculate Orbit Position (Idle) ---
-    // If scattered, move out further. If tree, follow cone orbit.
     const currentRadius = radius + (1 - progress) * 10.0;
     
     const angle = time * speedOffset + phaseOffset;
@@ -117,31 +116,24 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     const orbitY = yBase + bob;
 
     const orbitPos = new THREE.Vector3(orbitX, orbitY, orbitZ);
-    
-    // Look at center (trunk) roughly, but when scattered look random
     const lookTarget = new THREE.Vector3(0, orbitY, 0);
 
     // --- 2. Calculate Focus Position (Active) ---
-    // Target position: Camera position + Forward vector * distance
+    // Note: Since we disable OrbitControls when isActive, 'camera' is static.
+    // Thus focusPos is static relative to the screen, achieving "Fixed on Screen".
     camera.getWorldDirection(dir);
-    const focusDist = 8; // Distance in front of camera
+    const focusDist = 8;
     const focusPos = camera.position.clone().add(dir.multiplyScalar(focusDist));
     
-    // Determine Target
     const targetPos = isActive ? focusPos : orbitPos;
 
     // --- 3. Animation ---
-    // Smoothly damp position
-    easing.damp3(groupRef.current.position, targetPos, isActive ? 0.8 : 1.5, delta);
+    easing.damp3(groupRef.current.position, targetPos, isActive ? 0.6 : 1.5, delta);
 
-    // Orientation
     if (isActive) {
-      // Look at camera
       groupRef.current.lookAt(camera.position);
     } else {
-      // Look at tree center (billboard-ish but radial)
       groupRef.current.lookAt(lookTarget);
-      // Add a slight spin if scattered
       if (progress < 0.5) {
          groupRef.current.rotation.z += delta * 0.5;
          groupRef.current.rotation.x += delta * 0.2;
@@ -149,20 +141,12 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     }
 
     // Scale Logic
-    // Base scale: 1.5 world units
-    // Focus scale: Calculate based on viewport height to cover ~70%
-    // viewport.height is the height of the screen in world units at the target distance? 
-    // Actually, viewport changes with distance, so we use a rough approximation or keep it simple.
-    // At distance 8 with FOV 45, the frustum height is approx: 2 * 8 * tan(22.5) ~ 6.6 units
-    // So 70% is ~4.6 units.
-    
     const baseScale = 1.5;
-    // Calculate aspect ratio scale
     const scaleX = baseScale * photo.aspect;
     const scaleY = baseScale;
 
-    // Focused Scale
-    const fH = (Math.tan((camera.fov * Math.PI) / 180 / 2) * focusDist * 2) * 0.7;
+    // Calculate focused scale to fill ~60-70% height
+    const fH = (Math.tan((camera.fov * Math.PI) / 180 / 2) * focusDist * 2) * 0.65;
     const fScaleY = fH;
     const fScaleX = fH * photo.aspect;
 
@@ -174,7 +158,6 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
   return (
     <group ref={groupRef}>
-      {/* Click interaction wrapper */}
       <group 
         onClick={(e) => {
           e.stopPropagation();
@@ -183,7 +166,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
         onPointerOver={() => document.body.style.cursor = 'pointer'}
         onPointerOut={() => document.body.style.cursor = 'auto'}
       >
-        {/* Frame Border (Gold Mesh Behind) */}
+        {/* Frame Border */}
         <mesh position={[0, 0, -0.05]}>
           <planeGeometry args={[1.1, 1.1]} />
           <meshStandardMaterial 
@@ -201,13 +184,52 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
           transparent 
           side={THREE.DoubleSide}
         />
+
+        {/* DELETE BUTTON (Only visible when active) */}
+        {isActive && (
+          <group 
+            position={[0.55, 0.55, 0.1]}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemovePhoto(photo.id);
+              setActive(null);
+            }}
+          >
+            {/* Red Circle Background */}
+            <mesh>
+              <circleGeometry args={[0.08, 32]} />
+              <meshBasicMaterial color="#ff4444" toneMapped={false} />
+            </mesh>
+            {/* White Border */}
+            <mesh position={[0,0,-0.001]}>
+               <circleGeometry args={[0.1, 32]} />
+               <meshBasicMaterial color="white" toneMapped={false} />
+            </mesh>
+            {/* X Icon */}
+            <group rotation={[0,0,Math.PI/4]} scale={0.6}>
+               <mesh position={[0,0,0.01]}>
+                   <boxGeometry args={[0.15, 0.03, 0.01]} />
+                   <meshBasicMaterial color="white" toneMapped={false} />
+               </mesh>
+               <mesh rotation={[0,0,Math.PI/2]} position={[0,0,0.01]}>
+                   <boxGeometry args={[0.15, 0.03, 0.01]} />
+                   <meshBasicMaterial color="white" toneMapped={false} />
+               </mesh>
+            </group>
+          </group>
+        )}
       </group>
     </group>
   );
 };
 
-export const PhotoAlbum: React.FC<PhotoAlbumProps> = ({ photos, progressRef }) => {
-  const [activeId, setActiveId] = useState<string | null>(null);
+export const PhotoAlbum: React.FC<PhotoAlbumProps> = ({ 
+  photos, 
+  progressRef, 
+  activeId, 
+  setActiveId,
+  onRemovePhoto
+}) => {
   const { camera } = useThree();
 
   return (
@@ -221,6 +243,7 @@ export const PhotoAlbum: React.FC<PhotoAlbumProps> = ({ photos, progressRef }) =
           isActive={activeId === photo.id}
           setActive={setActiveId}
           progressRef={progressRef}
+          onRemovePhoto={onRemovePhoto}
         />
       ))}
 
@@ -229,19 +252,17 @@ export const PhotoAlbum: React.FC<PhotoAlbumProps> = ({ photos, progressRef }) =
         <mesh 
           position={[camera.position.x, camera.position.y, camera.position.z]} 
           onClick={(e) => { e.stopPropagation(); setActiveId(null); }}
-          visible={false} // Invisible raycast target
+          visible={false} 
         >
           <sphereGeometry args={[100, 16, 16]} />
           <meshBasicMaterial side={THREE.BackSide} />
         </mesh>
       )}
 
-      {/* Golden Dust Effect attached to camera logic (rendered in Scene actually, but positioned here) */}
-      {/* Since we want it behind the focused image, we can just put it in the scene. 
-          To simplify, let's just create a global dust system that fades in. */}
+      {/* Golden Dust Effect */}
       {activeId && (
          <group position={camera.position} rotation={camera.rotation}>
-            <group position={[0, 0, -10]}> {/* 10 units in front of camera, behind the photo at 8 units */}
+            <group position={[0, 0, -10]}>
                  <GoldenDust visible={!!activeId} />
             </group>
          </group>

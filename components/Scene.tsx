@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
@@ -13,19 +13,20 @@ import { TreeState, PhotoData } from '../types';
 interface SceneProps {
   currentState: TreeState;
   photos: PhotoData[];
+  onRemovePhoto: (id: string) => void;
 }
 
-export const Scene: React.FC<SceneProps> = ({ currentState, photos }) => {
+export const Scene: React.FC<SceneProps> = ({ currentState, photos, onRemovePhoto }) => {
   // We use a ref to track the animated progress value (0 to 1)
-  // This allows us to pass a smooth float to the shaders/instances without triggering React re-renders every frame
   const progressRef = useRef(0);
+  
+  // Track active photo state here to disable controls
+  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
 
   useFrame((state, delta) => {
     // Smoothly damp the progress value based on target state
     // 0 = Scattered, 1 = Tree Shape
     const target = currentState === TreeState.TREE_SHAPE ? 1 : 0;
-    
-    // Damp logic: value, target, smoothing time, delta
     easing.damp(progressRef, 'current', target, 1.5, delta);
   });
 
@@ -55,18 +56,30 @@ export const Scene: React.FC<SceneProps> = ({ currentState, photos }) => {
         <FoliageParticles progressRef={progressRef} />
         <Ornaments progressRef={progressRef} />
         <Gifts progressRef={progressRef} />
-        <PhotoAlbum photos={photos} progressRef={progressRef} />
+        <PhotoAlbum 
+          photos={photos} 
+          progressRef={progressRef} 
+          activeId={activePhotoId}
+          setActiveId={setActivePhotoId}
+          onRemovePhoto={onRemovePhoto}
+        />
       </group>
 
       {/* Ground Reflections */}
       <ContactShadows resolution={1024} scale={50} blur={2} opacity={0.5} far={10} color="#000000" />
 
       {/* Controls */}
+      {/* 
+        CRITICAL FIX: Disable OrbitControls when a photo is active.
+        This ensures the camera stops moving, so the photo (which looks at the camera)
+        appears "fixed" on the screen and doesn't rotate dizzily.
+      */}
       <OrbitControls 
+        enabled={!activePhotoId}
         enablePan={false} 
         minPolarAngle={Math.PI / 4} 
         maxPolarAngle={Math.PI / 2}
-        autoRotate={currentState === TreeState.TREE_SHAPE}
+        autoRotate={currentState === TreeState.TREE_SHAPE && !activePhotoId}
         autoRotateSpeed={0.5}
         maxDistance={30}
         minDistance={8}
